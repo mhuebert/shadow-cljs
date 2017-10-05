@@ -29,15 +29,14 @@
 
 (defonce compile-state-ref (env/default-compiler-env))
 
-(defonce loaded-ref (atom #{}))
+(defonce pre-loaded (atom #{}))
 
 ;; calls to this will be injected by shadow-cljs
 ;; it will receive an array of strings matching the goog.provide
 ;; names that where provided by the "app"
 (defn set-loaded [namespaces]
   (let [loaded (into #{} (map symbol) namespaces)]
-    (swap! loaded-ref set/union loaded)
-    (swap! cljs/*loaded* set/union loaded)))
+    (swap! pre-loaded set/union loaded)))
 
 (defonce index-ref (atom nil))
 
@@ -85,7 +84,7 @@
            (cond
              ;; skip loading files that are loaded
              ;; FIXME: keep track of loaded resource-ids instead of the provides?
-             (set/superset? @loaded-ref provides)
+             (set/superset? @cljs/*loaded* provides)
              x
 
              ;; don't load files that don't provide anything we want
@@ -108,8 +107,7 @@
     (let [data (transit-read text)]
       (cljs/load-analysis-cache! compile-state-ref ns data))
     :js
-    (do (swap! loaded-ref set/union provides)
-        (swap! cljs/*loaded* set/union provides)
+    (do (swap! cljs/*loaded* set/union provides)
         (js/eval text))
     ))
 
@@ -142,11 +140,12 @@
                   (= :cljs type)
                   (conj {:type :analyzer
                          :ns ns
-                         :uri (str asset-path "/ana/" source-name ".ana.transit.json")}))
-                (conj {:type :js
-                       :ns ns
-                       :provides provides
-                       :uri (str asset-path "/js/" output-name)})))
+                         :uri (str asset-path "/ana/" source-name ".ana.transit.json")})
+                  (not (@pre-loaded ns))
+                  (conj {:type     :js
+                         :ns       ns
+                         :provides provides
+                         :uri      (str asset-path "/js/" output-name)}))))
           []
           deps-to-load)
 
